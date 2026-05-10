@@ -528,15 +528,28 @@
     async function loadUnifiedTvStream(provider, payload) {
         const apiBase = await resolveNewTvApiUrl();
         const ott = (provider.id === 'HOTSTAR' || provider.id === 'DISNEY PLUS') ? 'hs' : provider.ott;
-        const headers = buildNewTvHeaders(ott, { Usertoken: '' });
-        const res = await http_get(apiBase + '/newtv/player.php?id=' + payload.id, headers);
+        const apiHeaders = buildNewTvHeaders(ott, { Usertoken: '' });
+        const res = await http_get(apiBase + '/newtv/player.php?id=' + payload.id, apiHeaders);
         const data = parseJsonSafe(res.body, {});
         if (!data.video_link) return [];
+
+        // Streaming headers must be minimal — the API headers above include
+        // Accept: application/json and Cache-Control: no-cache, which break
+        // HLS segment fetches. We also wrap the CDN URL in MAGIC_PROXY_v2 so
+        // the local proxy injects these headers on every segment request and
+        // can normalize the CDN's broken Range-with-gzip responses.
+        const streamHeaders = {
+            'User-Agent': NEW_TV_BASE_HEADERS['User-Agent'],
+            'Ott': ott
+        };
+        const proxyConfig = JSON.stringify({ url: data.video_link, headers: streamHeaders });
+        const proxyUrl = 'MAGIC_PROXY_v2' + btoa(proxyConfig);
+
         return [new StreamResult({
-            url: data.video_link,
+            url: proxyUrl,
             source: provider.id + ' [NetMirror]',
             type: 'hls',
-            headers: headers
+            headers: streamHeaders
         })];
     }
 
