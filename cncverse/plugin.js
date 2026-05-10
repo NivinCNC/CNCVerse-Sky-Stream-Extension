@@ -529,7 +529,7 @@
         const apiBase = await resolveNewTvApiUrl();
         const ott = (provider.id === 'HOTSTAR' || provider.id === 'DISNEY PLUS') ? 'hs' : provider.ott;
         const headers = buildNewTvHeaders(ott, { Usertoken: '' });
-        const res = await http_get(apiBase + '/newtv/player.php?id=' + encodeURIComponent(payload.id), headers);
+        const res = await http_get(apiBase + '/newtv/player.php?id=' + payload.id, headers);
         const data = parseJsonSafe(res.body, {});
         if (!data.video_link) return [];
         return [new StreamResult({
