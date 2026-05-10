@@ -28,6 +28,42 @@
         'X-Requested-With': 'XMLHttpRequest'
     };
 
+    const NEW_TV_BASE_HEADERS = {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+        'X-Requested-With': 'NetmirrorNewTV v1.0',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:136.0) Gecko/20100101 Firefox/136.0 /OS.GatuNewTV v1.0',
+        'Accept': 'application/json, text/plain, */*'
+    };
+
+    const NEW_TV_DOMAINS = [
+        'aHR0cHM6Ly9tb2JpbGVkZXRlY3RzLmNvbQ==',
+        'aHR0cHM6Ly9tb2JpbGVkZXRlY3QuYXBw',
+        'aHR0cHM6Ly9tb2JpZGV0ZWN0LmFydA==',
+        'aHR0cHM6Ly9tb2JpZGV0ZWN0LmNj',
+        'aHR0cHM6Ly9tb2JpZGV0ZWN0LmNsaWNr',
+        'aHR0cHM6Ly9tb2JpZGV0ZWN0Lmluaw==',
+        'aHR0cHM6Ly9tb2JpZGV0ZWN0LmxpdmU=',
+        'aHR0cHM6Ly9tb2JpZGV0ZWN0LnBybw==',
+        'aHR0cHM6Ly9tb2JpZGV0ZWN0LnNob3A=',
+        'aHR0cHM6Ly9tb2JpZGV0ZWN0LnNpdGU=',
+        'aHR0cHM6Ly9tb2JpZGV0ZWN0LnNwYWNl',
+        'aHR0cHM6Ly9tb2JpZGV0ZWN0LnN0b3Jl',
+        'aHR0cHM6Ly9tb2JpZGV0ZWN0LnZpcA==',
+        'aHR0cHM6Ly9tb2JpZGV0ZWN0Lndpa2k=',
+        'aHR0cHM6Ly9tb2JpZGV0ZWN0Lnh5eg==',
+        'aHR0cHM6Ly9tb2JpZGV0ZWN0cy5hcnQ=',
+        'aHR0cHM6Ly9tb2JpZGV0ZWN0cy5jYw==',
+        'aHR0cHM6Ly9tb2JpZGV0ZWN0cy5pbmZv',
+        'aHR0cHM6Ly9tb2JpZGV0ZWN0cy5pbms=',
+        'aHR0cHM6Ly9tb2JpZGV0ZWN0cy5saXZl',
+        'aHR0cHM6Ly9tb2JpZGV0ZWN0cy5wcm8=',
+        'aHR0cHM6Ly9tb2JpZGV0ZWN0cy5zdG9yZQ==',
+        'aHR0cHM6Ly9tb2JpZGV0ZWN0cy50b3A=',
+        'aHR0cHM6Ly9tb2JpZGV0ZWN0cy54eXo='
+    ];
+
     const PROVIDERS = {
         'NETFLIX': {
             id: 'NETFLIX',
@@ -97,6 +133,7 @@
 
     let cachedCookie = '';
     let lastBypassTime = 0;
+    let resolvedNewTvApiUrl = '';
 
     function clean(v) { return String(v || '').trim(); }
     function parseJsonSafe(text, fb) { try { return JSON.parse(text); } catch (_) { return fb; } }
@@ -124,6 +161,42 @@
         if (!txt) return '';
         const m = txt.match(/t_hash_t=([^;]+)/i);
         return m && m[1] ? decodeURIComponent(m[1]) : '';
+    }
+
+    function decodeBase64(value) {
+        if (typeof atob === 'function') return atob(value);
+        if (typeof Buffer !== 'undefined') return Buffer.from(value, 'base64').toString('utf-8');
+        return '';
+    }
+
+    function buildNewTvHeaders(ott, extra) {
+        const headers = Object.assign({}, NEW_TV_BASE_HEADERS, { Ott: ott });
+        if (extra) {
+            Object.keys(extra).forEach(function (key) {
+                headers[key] = extra[key];
+            });
+        }
+        return headers;
+    }
+
+    async function resolveNewTvApiUrl() {
+        if (resolvedNewTvApiUrl) return resolvedNewTvApiUrl;
+        for (let i = 0; i < NEW_TV_DOMAINS.length; i++) {
+            const base = decodeBase64(NEW_TV_DOMAINS[i]).replace(/\/+$/, '');
+            if (!base) continue;
+            try {
+                const res = await http_get(base + '/checknewtv.php', NEW_TV_BASE_HEADERS);
+                const data = parseJsonSafe(res.body, {});
+                const tokenHash = clean(data.token_hash);
+                if (tokenHash) {
+                    resolvedNewTvApiUrl = decodeBase64(tokenHash).replace(/\/+$/, '');
+                    if (resolvedNewTvApiUrl) return resolvedNewTvApiUrl;
+                }
+            } catch (_) {
+                // Try next domain.
+            }
+        }
+        throw new Error('Failed to resolve NewTV API base URL');
     }
 
     function randomUuid() {
@@ -452,6 +525,25 @@
         return out;
     }
 
+    async function loadUnifiedTvStream(provider, payload) {
+        const apiBase = await resolveNewTvApiUrl();
+        const ott = (provider.id === 'HOTSTAR' || provider.id === 'DISNEY PLUS') ? 'hs' : provider.ott;
+        const headers = buildNewTvHeaders(ott, { Usertoken: '' });
+        const res = await http_get(apiBase + '/newtv/player.php?id=' + encodeURIComponent(payload.id), headers);
+        const data = parseJsonSafe(res.body, {});
+        if (clean(data.status).toLowerCase() !== 'ok' || !data.video_link) return [];
+        return [new StreamResult({
+            url: data.video_link,
+            source: provider.id + ' [NewTV]',
+            type: 'hls',
+            headers: {
+                Referer: data.referer || apiBase,
+                Cookie: 'hd=on',
+                'User-Agent': NEW_TV_BASE_HEADERS['User-Agent']
+            }
+        })];
+    }
+
     async function loadStreams(dataStr, cb) {
         try {
             const payload = parseJsonSafe(dataStr, null);
@@ -459,12 +551,20 @@
             const provider = PROVIDERS[clean(payload.provider).toUpperCase()] || cfg();
 
             let results = [];
-            if (provider.id === 'HOTSTAR' || provider.id === 'DISNEY PLUS') {
-                results = await loadMobilePlaylistStreams(provider, payload, '/mobile/hs/playlist.php', 'hs');
-            } else if (provider.id === 'NETFLIX') {
-                results = await loadMobilePlaylistStreams(provider, payload, '/mobile/playlist.php');
-            } else {
-                results = await loadPrimeStreams(provider, payload);
+            try {
+                results = await loadUnifiedTvStream(provider, payload);
+            } catch (_) {
+                results = [];
+            }
+
+            if (!results.length) {
+                if (provider.id === 'HOTSTAR' || provider.id === 'DISNEY PLUS') {
+                    results = await loadMobilePlaylistStreams(provider, payload, '/mobile/hs/playlist.php', 'hs');
+                } else if (provider.id === 'NETFLIX') {
+                    results = await loadMobilePlaylistStreams(provider, payload, '/mobile/playlist.php');
+                } else {
+                    results = await loadPrimeStreams(provider, payload);
+                }
             }
             cb({ success: true, data: results });
         } catch (e) {
