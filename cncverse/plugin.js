@@ -531,16 +531,12 @@
         const headers = buildNewTvHeaders(ott, { Usertoken: '' });
         const res = await http_get(apiBase + '/newtv/player.php?id=' + encodeURIComponent(payload.id), headers);
         const data = parseJsonSafe(res.body, {});
-        if (clean(data.status).toLowerCase() !== 'ok' || !data.video_link) return [];
+        if (!data.video_link) return [];
         return [new StreamResult({
             url: data.video_link,
             source: provider.id + ' [NewTV]',
             type: 'hls',
-            headers: {
-                Referer: data.referer || apiBase,
-                Cookie: 'hd=on',
-                'User-Agent': NEW_TV_BASE_HEADERS['User-Agent']
-            }
+            headers: headers
         })];
     }
 
