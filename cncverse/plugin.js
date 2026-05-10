@@ -534,7 +534,7 @@
         if (!data.video_link) return [];
         return [new StreamResult({
             url: data.video_link,
-            source: provider.id + ' [NewTV]',
+            source: provider.id + ' [NetMirror]',
             type: 'hls',
             headers: headers
         })];
