@@ -331,6 +331,28 @@
         return out;
     }
 
+    async function getProviders(cb) {
+        try {
+            const provs = await fetchProviders();
+            const list = [];
+            const seen = {};
+            const liveName = (manifest && manifest.name ? manifest.name + ' Live Events' : 'SKTech Live Events');
+            list.push({ id: 'LIVE EVENTS', name: liveName });
+            seen['live events'] = true;
+            provs.forEach(function (p) {
+                const name = clean(p && (p.title || p.id) || '');
+                if (!name) return;
+                const key = name.toLowerCase();
+                if (seen[key]) return;
+                seen[key] = true;
+                list.push({ id: name, name: name });
+            });
+            return cb({ success: true, data: list });
+        } catch (e) {
+            return cb({ success: false, errorCode: 'PROVIDERS_ERROR', message: String(e && e.message || e) });
+        }
+    }
+
     function parseDateTime(d, t) {
         if (!d || !t) return null;
         const p = String(d).split('/');
@@ -686,4 +708,5 @@
     globalThis.search = search;
     globalThis.load = load;
     globalThis.loadStreams = loadStreams;
+    globalThis.getProviders = getProviders;
 })();

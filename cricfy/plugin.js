@@ -277,6 +277,28 @@
         return channels;
     }
 
+    async function getProviders(cb) {
+        try {
+            const providers = await fetchProviders();
+            const list = [];
+            const seen = {};
+            const liveName = (manifest && manifest.name ? manifest.name + ' Live Events' : 'Cricfy Live Events');
+            list.push({ id: 'LIVE EVENTS', name: liveName });
+            seen['live events'] = true;
+            providers.forEach(function (p) {
+                const name = clean(p && (p.title || p.id) || '');
+                if (!name) return;
+                const key = name.toLowerCase();
+                if (seen[key]) return;
+                seen[key] = true;
+                list.push({ id: name, name: name });
+            });
+            return cb({ success: true, data: list });
+        } catch (e) {
+            return cb({ success: false, errorCode: 'PROVIDERS_ERROR', message: String(e && e.message || e) });
+        }
+    }
+
     // ── Provider / Playlist helpers ─────────────────────────────────────────────
     async function fetchProviders() {
         const base = await getBaseUrl();
@@ -642,4 +664,5 @@
     globalThis.search = search;
     globalThis.load = load;
     globalThis.loadStreams = loadStreams;
+    globalThis.getProviders = getProviders;
 })();
